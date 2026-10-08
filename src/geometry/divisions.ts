@@ -103,7 +103,8 @@ export function clipPolygonByHorizontalLine(
  */
 export function calculateEqualAreaDivisions(
   polygon: Point[],
-  count: number
+  count: number,
+  orientation: 'vertical' | 'horizontal' = 'vertical'
 ): Point[][] {
   if (count <= 1) return [polygon];
 
@@ -111,10 +112,11 @@ export function calculateEqualAreaDivisions(
   const targetArea = totalArea / count;
 
   // Find bounding box
-  let minX = Infinity, maxX = -Infinity;
+  let minVal = Infinity, maxVal = -Infinity;
   for (const p of polygon) {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
+    const val = orientation === 'vertical' ? p.x : p.y;
+    if (val < minVal) minVal = val;
+    if (val > maxVal) maxVal = val;
   }
 
   const results: Point[][] = [];
@@ -122,42 +124,55 @@ export function calculateEqualAreaDivisions(
 
   for (let i = 0; i < count - 1; i++) {
     // Binary search for the cut line position
-    let lo = minX;
-    let hi = maxX;
+    let lo = minVal;
+    let hi = maxVal;
     const tolerance = 0.5; // sq unit tolerance
-    let bestCutX = (lo + hi) / 2;
+    let bestCut = (lo + hi) / 2;
 
-    // Update minX for remaining polygon
-    let rMinX = Infinity, rMaxX = -Infinity;
+    // Update min/max for remaining polygon
+    let rMin = Infinity, rMax = -Infinity;
     for (const p of remainingPolygon) {
-      if (p.x < rMinX) rMinX = p.x;
-      if (p.x > rMaxX) rMaxX = p.x;
+      const val = orientation === 'vertical' ? p.x : p.y;
+      if (val < rMin) rMin = val;
+      if (val > rMax) rMax = val;
     }
-    lo = rMinX;
-    hi = rMaxX;
+    lo = rMin;
+    hi = rMax;
 
     // Binary search
     for (let iter = 0; iter < 100; iter++) {
       const mid = (lo + hi) / 2;
-      const { left } = clipPolygonByVerticalLine(remainingPolygon, mid);
-      const leftArea = calculatePolygonArea(left);
+      let part1: Point[];
+      if (orientation === 'vertical') {
+        part1 = clipPolygonByVerticalLine(remainingPolygon, mid).left;
+      } else {
+        part1 = clipPolygonByHorizontalLine(remainingPolygon, mid).top;
+      }
+      
+      const part1Area = calculatePolygonArea(part1);
 
-      if (Math.abs(leftArea - targetArea) < tolerance) {
-        bestCutX = mid;
+      if (Math.abs(part1Area - targetArea) < tolerance) {
+        bestCut = mid;
         break;
       }
 
-      if (leftArea < targetArea) {
+      if (part1Area < targetArea) {
         lo = mid;
       } else {
         hi = mid;
       }
-      bestCutX = mid;
+      bestCut = mid;
     }
 
-    const { left, right } = clipPolygonByVerticalLine(remainingPolygon, bestCutX);
-    results.push(left);
-    remainingPolygon = right;
+    if (orientation === 'vertical') {
+      const { left, right } = clipPolygonByVerticalLine(remainingPolygon, bestCut);
+      results.push(left);
+      remainingPolygon = right;
+    } else {
+      const { top, bottom } = clipPolygonByHorizontalLine(remainingPolygon, bestCut);
+      results.push(top);
+      remainingPolygon = bottom;
+    }
   }
 
   // Last remaining part
@@ -171,26 +186,34 @@ export function calculateEqualAreaDivisions(
  */
 export function calculateEqualWidthDivisions(
   polygon: Point[],
-  count: number
+  count: number,
+  orientation: 'vertical' | 'horizontal' = 'vertical'
 ): Point[][] {
   if (count <= 1) return [polygon];
 
-  let minX = Infinity, maxX = -Infinity;
+  let minVal = Infinity, maxVal = -Infinity;
   for (const p of polygon) {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
+    const val = orientation === 'vertical' ? p.x : p.y;
+    if (val < minVal) minVal = val;
+    if (val > maxVal) maxVal = val;
   }
 
-  const width = maxX - minX;
-  const stepX = width / count;
+  const width = maxVal - minVal;
+  const step = width / count;
   const results: Point[][] = [];
   let remaining = [...polygon];
 
   for (let i = 0; i < count - 1; i++) {
-    const cutX = minX + stepX * (i + 1);
-    const { left, right } = clipPolygonByVerticalLine(remaining, cutX);
-    results.push(left);
-    remaining = right;
+    const cutVal = minVal + step * (i + 1);
+    if (orientation === 'vertical') {
+      const { left, right } = clipPolygonByVerticalLine(remaining, cutVal);
+      results.push(left);
+      remaining = right;
+    } else {
+      const { top, bottom } = clipPolygonByHorizontalLine(remaining, cutVal);
+      results.push(top);
+      remaining = bottom;
+    }
   }
   results.push(remaining);
 

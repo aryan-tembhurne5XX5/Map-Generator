@@ -117,6 +117,7 @@ export interface DivisionConfig {
   enabled: boolean;
   count: number;
   method: DivisionMethod;
+  orientation: 'vertical' | 'horizontal';
   divisions: Division[];
 }
 

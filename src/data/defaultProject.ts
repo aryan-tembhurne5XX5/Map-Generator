@@ -36,6 +36,7 @@ export function createDefaultProject(): LandProject {
       enabled: true,
       count: 2,
       method: 'equal-area',
+      orientation: 'vertical',
       divisions: [
         {
           id: 'div-1',
@@ -144,6 +145,7 @@ export function createEmptyProject(): LandProject {
       enabled: false,
       count: 1,
       method: 'equal-area',
+      orientation: 'vertical',
       divisions: [],
     },
     elements: [],

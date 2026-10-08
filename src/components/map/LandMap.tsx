@@ -77,9 +77,9 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
       let subPolygons: Point[][];
       
       if (project.divisions.method === 'equal-area') {
-        subPolygons = calculateEqualAreaDivisions(scaledPoints, project.divisions.count);
+        subPolygons = calculateEqualAreaDivisions(scaledPoints, project.divisions.count, project.divisions.orientation);
       } else {
-        subPolygons = calculateEqualWidthDivisions(scaledPoints, project.divisions.count);
+        subPolygons = calculateEqualWidthDivisions(scaledPoints, project.divisions.count, project.divisions.orientation);
       }
       
       const colors = project.divisions.divisions.map(d => d.color);
@@ -307,10 +307,14 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
       <defs>
         {/* Arrowhead markers */}
         <marker id="arrowStart" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto" markerUnits="strokeWidth">
-          <polygon points="10 0, 0 3.5, 10 7" fill="#1565c0" />
+          <polygon points="10 0, 0 3.5, 10 7" fill="#334155" />
         </marker>
         <marker id="arrowEnd" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" markerUnits="strokeWidth">
-          <polygon points="0 0, 10 3.5, 0 7" fill="#1565c0" />
+          <polygon points="0 0, 10 3.5, 0 7" fill="#334155" />
+        </marker>
+        {/* Survey tick marker */}
+        <marker id="tick" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto" markerUnits="strokeWidth">
+          <line x1="4" y1="0" x2="4" y2="8" stroke="#334155" strokeWidth="1.5" />
         </marker>
         {/* Gate pattern */}
         <pattern id="gatePattern" width="6" height="6" patternUnits="userSpaceOnUse">
@@ -340,17 +344,17 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
               key={div.id}
               points={div.polygon.map(p => `${p.x},${p.y}`).join(' ')}
               fill={div.color}
-              stroke="#2e7d32"
-              strokeWidth="2"
+              stroke="#334155"
+              strokeWidth="1"
             />
           )
         ))
       ) : (
-        <path d={polyPath} fill="#a5d6a7" stroke="#2e7d32" strokeWidth="2.5" />
+        <path d={polyPath} fill="#f8fafc" stroke="#334155" strokeWidth="1" />
       )}
 
       {/* Polygon outline (always on top) */}
-      <path d={polyPath} fill="none" stroke="#1b5e20" strokeWidth="2.5" />
+      <path d={polyPath} fill="none" stroke="#0f172a" strokeWidth="2" />
 
       {/* ══════ DIVISION LINES & LABELS ══════ */}
       {divisionData.length > 1 && divisionData.map((div, i) => {
@@ -588,21 +592,20 @@ const TitleSection: React.FC<{
   x: number; y: number; area: string; areaUnit: string; lang: Language; hasDivisions: boolean;
 }> = ({ x, y, area, areaUnit, lang, hasDivisions }) => (
   <g>
-    {/* Title box */}
-    <rect x={x - 200} y={y - 18} width="400" height="26" rx="13" fill="#1a237e" />
-    <text x={x} y={y + 1} textAnchor="middle" fontSize="13" fontWeight="700" fill="white">
-      {lang === 'hi' || lang === 'both' ? 'जमीन का नक्शा (ऊपर से देखने पर)' : 'Land Map (Top View)'}
+    {/* Title text */}
+    <text x={x} y={y} textAnchor="middle" fontSize="14" fontWeight="700" fill="#0f172a" letterSpacing="0.05em">
+      {lang === 'hi' || lang === 'both' ? 'जमीन का नक्शा (SITE PLAN)' : 'SITE PLAN'}
     </text>
     
     {/* Area badge */}
-    <text x={x} y={y + 24} textAnchor="middle" fontSize="13" fontWeight="700" fill="#1a237e">
-      {lang === 'hi' || lang === 'both' ? 'कुल क्षेत्रफल' : 'Total Area'} = {area} {areaUnit}
+    <text x={x} y={y + 20} textAnchor="middle" fontSize="12" fontWeight="600" fill="#334155">
+      {lang === 'hi' || lang === 'both' ? 'कुल क्षेत्रफल' : 'TOTAL AREA'} : {area} {areaUnit}
     </text>
     
     {/* Division status */}
     {!hasDivisions && (
-      <text x={x} y={y + 40} textAnchor="middle" fontSize="10" fontWeight="500" fill="#666">
-        {lang === 'hi' || lang === 'both' ? '(कोई बंटवारा नहीं है – पूरी जमीन एक है)' : '(No division – Entire land is one)'}
+      <text x={x} y={y + 36} textAnchor="middle" fontSize="10" fontWeight="400" fill="#64748b">
+        {lang === 'hi' || lang === 'both' ? '(कोई बंटवारा नहीं है)' : '(NO DIVISIONS)'}
       </text>
     )}
   </g>
@@ -618,37 +621,38 @@ const DimensionLineComponent: React.FC<{
 
   return (
     <g>
+      {/* Extension lines from polygon to dimension line */}
+      <line x1={p1.x} y1={p1.y} x2={dimLine.start.x} y2={dimLine.start.y}
+        stroke="#94a3b8" strokeWidth="0.5" />
+      <line x1={p2.x} y1={p2.y} x2={dimLine.end.x} y2={dimLine.end.y}
+        stroke="#94a3b8" strokeWidth="0.5" />
+
       {/* Dimension line with arrows */}
       <line
         x1={dimLine.start.x} y1={dimLine.start.y}
         x2={dimLine.end.x} y2={dimLine.end.y}
-        stroke="#1565c0" strokeWidth="1.5"
-        markerStart="url(#arrowStart)" markerEnd="url(#arrowEnd)"
+        stroke="#334155" strokeWidth="1"
+        markerStart="url(#tick)" markerEnd="url(#tick)"
       />
-      
-      {/* Extension lines from polygon to dimension line */}
-      <line x1={p1.x} y1={p1.y} x2={dimLine.start.x} y2={dimLine.start.y}
-        stroke="#1565c0" strokeWidth="0.5" strokeDasharray="3,3" opacity="0.5" />
-      <line x1={p2.x} y1={p2.y} x2={dimLine.end.x} y2={dimLine.end.y}
-        stroke="#1565c0" strokeWidth="0.5" strokeDasharray="3,3" opacity="0.5" />
 
       {/* Measurement text */}
       {isVertical ? (
         <g>
+          <rect x={dimLine.textPosition.x + (side === 'left' ? -25 : 5)} y={dimLine.textPosition.y - 35} width="20" height="70" fill="rgba(255, 255, 255, 0.85)" />
           <text
             x={dimLine.textPosition.x + (side === 'left' ? -15 : 15)}
             y={dimLine.textPosition.y}
             textAnchor="middle"
-            fontSize="12" fontWeight="700" fill="#1565c0"
+            fontSize="11" fontWeight="600" fill="#0f172a"
             transform={`rotate(${side === 'left' ? -90 : 90}, ${dimLine.textPosition.x + (side === 'left' ? -15 : 15)}, ${dimLine.textPosition.y})`}
           >
-            {value} {unit} ({valueM} {lang === 'hi' || lang === 'both' ? 'मी.' : 'm'})
+            {value} {unit}
           </text>
           <text
             x={dimLine.textPosition.x + (side === 'left' ? -30 : 30)}
             y={dimLine.textPosition.y}
             textAnchor="middle"
-            fontSize="9" fontWeight="600" fill="#37474f"
+            fontSize="8" fontWeight="500" fill="#475569"
             transform={`rotate(${side === 'left' ? -90 : 90}, ${dimLine.textPosition.x + (side === 'left' ? -30 : 30)}, ${dimLine.textPosition.y})`}
           >
             {sideDesc}
@@ -656,13 +660,14 @@ const DimensionLineComponent: React.FC<{
         </g>
       ) : (
         <g>
+          <rect x={dimLine.textPosition.x - 40} y={dimLine.textPosition.y + (side === 'top' ? -20 : 12)} width="80" height="12" fill="rgba(255, 255, 255, 0.85)" />
           <text
             x={dimLine.textPosition.x}
             y={dimLine.textPosition.y + (side === 'top' ? -12 : 20)}
             textAnchor="middle"
-            fontSize="12" fontWeight="700" fill="#1565c0"
+            fontSize="11" fontWeight="600" fill="#0f172a"
           >
-            {sideDesc} = {value} {unit} ({valueM} {lang === 'hi' || lang === 'both' ? 'मी.' : 'm'})
+            {value} {unit}
           </text>
         </g>
       )}
@@ -689,17 +694,17 @@ const CornerLabel: React.FC<{
       {isInteractive && (
         <circle 
           cx={point.x} cy={point.y} r="16" 
-          fill={isDragging ? 'rgba(26, 35, 126, 0.2)' : 'transparent'}
-          stroke={isDragging ? '#1a237e' : 'transparent'}
+          fill={isDragging ? 'rgba(15, 23, 42, 0.1)' : 'transparent'}
+          stroke={isDragging ? '#0f172a' : 'transparent'}
           strokeWidth="1"
           style={{ cursor: 'move', touchAction: 'none' }}
           onPointerDown={e => onPointerDown?.(e, id)}
         />
       )}
-      <circle cx={point.x} cy={point.y} r={isDragging ? "5" : "3"} fill="#1a237e" style={{ pointerEvents: 'none' }} />
+      <circle cx={point.x} cy={point.y} r={isDragging ? "4" : "2"} fill="#0f172a" style={{ pointerEvents: 'none' }} />
       <text
         x={point.x + dx} y={point.y + dy}
-        textAnchor="middle" fontSize="16" fontWeight="800" fill="#c62828"
+        textAnchor="middle" fontSize="12" fontWeight="600" fill="#0f172a"
         style={{ pointerEvents: 'none' }}
       >
         {label}
@@ -729,7 +734,7 @@ const DirectionLabel: React.FC<{
     <g>
       <text
         x={mid.x + dx} y={mid.y + dy}
-        textAnchor="middle" fontSize="12" fontWeight="700" fill="#c62828"
+        textAnchor="middle" fontSize="9" fontWeight="600" fill="#64748b" letterSpacing="0.05em"
         transform={isVertical ? `rotate(${side === 'left' ? -90 : 90}, ${mid.x + dx}, ${mid.y + dy})` : undefined}
       >
         {translateDirectionBoth(direction.replace(/\s*\(.*\)/, '').toLowerCase() as CardinalDirection)}

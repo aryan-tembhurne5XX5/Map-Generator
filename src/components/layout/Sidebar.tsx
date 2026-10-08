@@ -275,6 +275,16 @@ const Sidebar: React.FC<SidebarProps> = ({
                   <option value="equal-width">{lang === 'hi' || lang === 'both' ? 'बराबर चौड़ाई' : 'Equal Width'}</option>
                 </select>
               </div>
+              <div className="form-group">
+                <label className="form-label">{lang === 'hi' || lang === 'both' ? 'दिशा' : 'Direction'}</label>
+                <select className="form-select" value={project.divisions.orientation || 'vertical'}
+                  onChange={e => onUpdate({
+                    divisions: { ...project.divisions, orientation: e.target.value as 'vertical' | 'horizontal' }
+                  })}>
+                  <option value="vertical">{lang === 'hi' || lang === 'both' ? 'खड़ी (Vertical)' : 'Vertical'}</option>
+                  <option value="horizontal">{lang === 'hi' || lang === 'both' ? 'आड़ी (Horizontal)' : 'Horizontal'}</option>
+                </select>
+              </div>
             </div>
           </>
         )}
