@@ -138,9 +138,6 @@ const App: React.FC = () => {
                 </h1>
               )}
             </div>
-            <div className="subtitle">
-              {lang === 'hi' || lang === 'both' ? 'पेशेवर भूमि नक्शा निर्माता' : 'Professional Land Map Creator'}
-            </div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -151,8 +148,8 @@ const App: React.FC = () => {
             const statusText = polygon.status === 'reliable'
               ? (lang === 'hi' || lang === 'both' ? 'विश्वसनीय' : 'Reliable')
               : polygon.status === 'approximate'
-              ? (lang === 'hi' || lang === 'both' ? 'अनुमानित' : 'Approximate')
-              : (lang === 'hi' || lang === 'both' ? 'अमान्य' : 'Invalid');
+                ? (lang === 'hi' || lang === 'both' ? 'अनुमानित' : 'Approximate')
+                : (lang === 'hi' || lang === 'both' ? 'अमान्य' : 'Invalid');
             return (
               <div className={`status-badge ${statusClass}`}>
                 <div className="status-dot" />
@@ -182,23 +179,23 @@ const App: React.FC = () => {
           {/* Toolbar */}
           <div className="map-toolbar">
             <div className="map-toolbar-group">
-              <button 
+              <button
                 className={`btn btn-sm ${project.editMode !== 'presentation' ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => handleUpdate({ editMode: 'free' })}
               >
                 <Edit3 size={14} style={{ marginRight: 6 }} />
                 {lang === 'hi' || lang === 'both' ? 'नक्शा एडिट करें' : 'Edit Map'}
               </button>
-              <button 
+              <button
                 className={`btn btn-sm ${project.editMode === 'presentation' ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => handleUpdate({ editMode: 'presentation' })}
               >
                 <Map size={14} style={{ marginRight: 6 }} />
                 {lang === 'hi' || lang === 'both' ? 'पूर्वावलोकन' : 'Preview'}
               </button>
-              
+
               <div style={{ width: 1, height: 24, background: '#e2e8f0', margin: '0 8px' }} />
-              
+
               <span style={{ fontSize: '0.65rem', color: '#94a3b8' }}>
                 Ctrl+Scroll to zoom
               </span>

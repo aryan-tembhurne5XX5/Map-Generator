@@ -17,7 +17,7 @@
   --color-land: #81c784;
   --color-land-dark: #4caf50;
   --color-land-fill: #a5d6a7;
-  
+
   --color-division-1: rgba(76, 175, 80, 0.35);
   --color-division-2: rgba(255, 235, 59, 0.35);
 
@@ -26,14 +26,14 @@
   --color-surface-card: #ffffff;
   --color-border: #e2e8f0;
   --color-border-strong: #cbd5e1;
-  
+
   --color-text-primary: #0f172a;
   --color-text-secondary: #475569;
   --color-text-muted: #94a3b8;
   --color-text-dim: #1a237e;
   --color-text-dimension: #1565c0;
   --color-text-direction: #c62828;
-  
+
   --color-status-reliable: #16a34a;
   --color-status-approximate: #ca8a04;
   --color-status-invalid: #dc2626;
@@ -113,12 +113,6 @@ body {
   font-weight: 700;
   letter-spacing: -0.01em;
   margin: 0;
-}
-
-.app-header .subtitle {
-  font-size: 0.75rem;
-  opacity: 0.7;
-  font-weight: 400;
 }
 
 .header-icon {
@@ -255,7 +249,7 @@ body {
   align-items: flex-end;
 }
 
-.form-row > * {
+.form-row>* {
   flex: 1;
 }
 
@@ -553,7 +547,7 @@ body {
   .app-body {
     flex-direction: column;
   }
-  
+
   .sidebar {
     width: 100%;
     min-width: unset;
@@ -562,7 +556,7 @@ body {
     border-right: none;
     border-bottom: 1px solid var(--color-border);
   }
-  
+
   .map-viewport {
     padding: 16px;
   }
@@ -571,6 +565,7 @@ body {
 /* ─── Print ─────────────────────────────────────── */
 
 @media print {
+
   .sidebar,
   .app-header,
   .map-toolbar {
@@ -594,8 +589,15 @@ body {
 /* ─── Animations ────────────────────────────────── */
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .fade-in {
@@ -603,8 +605,15 @@ body {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
 }
 
 .pulse {
