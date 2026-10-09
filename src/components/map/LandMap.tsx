@@ -15,11 +15,13 @@ import type {
   PositionPreset,
 } from '@/types/land';
 import { computePolygon, calculateBoundingBox, calculateCentroid, calculatePolygonArea } from '@/geometry/polygon';
-import { calculateDimensionLine, calculateElementPosition } from '@/geometry/dimensions';
+import { calculateElementPosition } from '@/geometry/dimensions';
 import { calculateEqualAreaDivisions, calculateEqualWidthDivisions, createDivisionsFromPolygons } from '@/geometry/divisions';
 import { convertUnits, formatNumber, unitLabel, areaUnitLabel, unitLabelHi, areaUnitLabelHi } from '@/geometry/units';
 import { t, translateDirectionBoth } from '@/i18n/translations';
 import { deriveBoundariesFromCoordinates } from '@/geometry/polygon';
+import { SurroundingsRenderer } from './SurroundingsRenderer';
+
 
 interface DragState {
   type: 'corner' | 'element';
@@ -36,10 +38,9 @@ interface LandMapProps {
 }
 
 // SVG layout constants
-const PADDING = 120;       // padding around the polygon for labels
 const INFO_PANEL_WIDTH = 280;
-const MIN_SVG_WIDTH = 900;
-const MIN_SVG_HEIGHT = 650;
+const DEFAULT_SVG_WIDTH = 1100;
+const DEFAULT_SVG_HEIGHT = 780;
 
 const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) => {
   const svgRef = React.useRef<SVGSVGElement>(null);
@@ -48,13 +49,40 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
   const computed = useMemo(() => {
     // 1. Compute the polygon
     const polygon = computePolygon(project.boundaries, project.geometry);
-    
-    // 2. Calculate scale
-    const GAP = 120; // 120px gap for right-side dimensions/labels
+
+    // 2. Calculate scale — account for road band in top padding
+    const GAP = 40;
     const bbox = calculateBoundingBox(polygon.points);
-    const availableWidth = (width || MIN_SVG_WIDTH) - PADDING * 2 - (project.display.showInfoPanel ? INFO_PANEL_WIDTH + GAP : 0);
-    const availableHeight = (height || MIN_SVG_HEIGHT) - PADDING * 2 - 60;
-    
+
+    // Estimate road widths (in logical units) on each side to size padding
+    const roadTop = project.surroundings[project.orientation.top]?.type === 'road' ? (project.surroundings[project.orientation.top].width || 12) : 0;
+    const roadBottom = project.surroundings[project.orientation.bottom]?.type === 'road' ? (project.surroundings[project.orientation.bottom].width || 12) : 0;
+    const roadLeft = project.surroundings[project.orientation.left]?.type === 'road' ? (project.surroundings[project.orientation.left].width || 12) : 0;
+    const roadRight = project.surroundings[project.orientation.right]?.type === 'road' ? (project.surroundings[project.orientation.right].width || 12) : 0;
+
+    const PANEL_SPACE = project.display.showInfoPanel ? INFO_PANEL_WIDTH + GAP : 0;
+
+    const canvasWidth = width || DEFAULT_SVG_WIDTH;
+    const canvasHeight = height || DEFAULT_SVG_HEIGHT;
+
+    // Base padding for annotations (dimension lines, corner labels)
+    const BASE_PAD = 110;
+    // Extra for road band + its label space
+    const ROAD_EXTRA = 55; // extra px per road side beyond scale
+    // We will first do a preliminary scale to convert road widths to px,
+    // then add those to padding. Iterate once for good approximation.
+    const prelimScaleX = (canvasWidth - BASE_PAD * 2 - PANEL_SPACE) / Math.max(bbox.width, 1);
+    const prelimScaleY = (canvasHeight - BASE_PAD * 2) / Math.max(bbox.height, 1);
+    const prelimScale = Math.min(prelimScaleX, prelimScaleY);
+
+    const PADDING_TOP = BASE_PAD + (roadTop > 0 ? roadTop * prelimScale + ROAD_EXTRA : 0);
+    const PADDING_BOTTOM = BASE_PAD + (roadBottom > 0 ? roadBottom * prelimScale + ROAD_EXTRA : 0);
+    const PADDING_LEFT = BASE_PAD + (roadLeft > 0 ? roadLeft * prelimScale + ROAD_EXTRA : 0);
+    const PADDING_RIGHT = BASE_PAD + (roadRight > 0 ? roadRight * prelimScale + ROAD_EXTRA : 0);
+
+    const availableWidth = canvasWidth - PADDING_LEFT - PADDING_RIGHT - PANEL_SPACE;
+    const availableHeight = canvasHeight - PADDING_TOP - PADDING_BOTTOM;
+
     const scaleX = availableWidth / Math.max(bbox.width, 1);
     const scaleY = availableHeight / Math.max(bbox.height, 1);
     const scale = Math.min(scaleX, scaleY);
@@ -62,8 +90,8 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
     // Center polygon within available space
     const scaledWidth = bbox.width * scale;
     const scaledHeight = bbox.height * scale;
-    const offsetX = PADDING + (availableWidth - scaledWidth) / 2;
-    const offsetY = PADDING + 40 + (availableHeight - scaledHeight) / 2;
+    const offsetX = PADDING_LEFT + (availableWidth - scaledWidth) / 2;
+    const offsetY = PADDING_TOP + (availableHeight - scaledHeight) / 2;
 
     // 3. Scale polygon points
     const scaledPoints = polygon.points.map(p => ({
@@ -75,16 +103,16 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
     let divisionData: Division[] = [];
     if (project.divisions.enabled && project.divisions.count > 1) {
       let subPolygons: Point[][];
-      
+
       if (project.divisions.method === 'equal-area') {
         subPolygons = calculateEqualAreaDivisions(scaledPoints, project.divisions.count, project.divisions.orientation);
       } else {
         subPolygons = calculateEqualWidthDivisions(scaledPoints, project.divisions.count, project.divisions.orientation);
       }
-      
+
       const colors = project.divisions.divisions.map(d => d.color);
       divisionData = createDivisionsFromPolygons(subPolygons, colors);
-      
+
       // Calculate areas in original units (divide by scale^2)
       divisionData = divisionData.map(d => ({
         ...d,
@@ -124,8 +152,8 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
 
   // Calculate total SVG dimensions
   const scaledBbox = calculateBoundingBox(scaledPoints);
-  const svgWidth = Math.max(MIN_SVG_WIDTH, scaledBbox.maxX + PADDING + INFO_PANEL_WIDTH + 40);
-  const svgHeight = Math.max(MIN_SVG_HEIGHT, scaledBbox.maxY + PADDING + 40);
+  const svgWidth = width || DEFAULT_SVG_WIDTH;
+  const svgHeight = height || DEFAULT_SVG_HEIGHT;
 
   // Direction labels mapped to sides based on orientation
   const dirMap = project.orientation;
@@ -138,20 +166,16 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
   const areaText = formatNumber(Math.round(displayArea));
   const areaUnit = lang === 'hi' ? areaUnitLabelHi(unit) : (lang === 'both' ? `${areaUnitLabel(unit)}` : areaUnitLabel(unit));
 
-  // Meter conversion
-  const toMeters = (val: number) => convertUnits(val, unit, 'm').toFixed(2);
-  const formatLength = (val: number) => Number(val.toFixed(2));
-
   // Polygon path
   const polyPath = scaledPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z';
-  
+
   // Centroid of polygon
   const centroid = calculateCentroid(scaledPoints);
 
   const handlePointerDown = (e: React.PointerEvent<SVGElement>, cornerId: 'A' | 'B' | 'C' | 'D') => {
     if (!onUpdate) return;
     e.stopPropagation();
-    
+
     // Initialize coordinate mode if not already
     let currentCoords = project.geometry.coordinates;
     if (project.geometry.mode !== 'coordinate' || !currentCoords?.A) {
@@ -172,7 +196,7 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
 
     const svg = svgRef.current;
     if (!svg) return;
-    
+
     const pt = svg.createSVGPoint();
     pt.x = e.clientX;
     pt.y = e.clientY;
@@ -184,7 +208,7 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
       startLogical: currentCoords[cornerId]!,
       startSvg: { x: svgP.x, y: svgP.y },
     });
-    
+
     // Capture pointer
     (e.target as Element).setPointerCapture(e.pointerId);
   };
@@ -192,10 +216,10 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
   const handleElementPointerDown = (e: React.PointerEvent<SVGElement>, elementId: string, currentX: number, currentY: number) => {
     if (!onUpdate) return;
     e.stopPropagation();
-    
+
     const svg = svgRef.current;
     if (!svg) return;
-    
+
     const pt = svg.createSVGPoint();
     pt.x = e.clientX;
     pt.y = e.clientY;
@@ -211,13 +235,13 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
       },
       startSvg: { x: svgP.x, y: svgP.y },
     });
-    
+
     (e.target as Element).setPointerCapture(e.pointerId);
   };
 
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!dragState || !svgRef.current || !onUpdate) return;
-    
+
     const svg = svgRef.current;
     const pt = svg.createSVGPoint();
     pt.x = e.clientX;
@@ -229,16 +253,16 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
 
     const dxLogical = dxSvg / scale;
     const dyLogical = dySvg / scale;
-    
+
     let newX = dragState.startLogical.x + dxLogical;
     let newY = dragState.startLogical.y + dyLogical;
-    
+
     // Apply snapping if needed
     if (project.snapIncrement > 0 && !e.altKey) {
       newX = Math.round(newX / project.snapIncrement) * project.snapIncrement;
       newY = Math.round(newY / project.snapIncrement) * project.snapIncrement;
     }
-    
+
     // Constrained mode (shift key)
     if (project.editMode === 'constrained' || e.shiftKey) {
       if (Math.abs(dxSvg) > Math.abs(dySvg)) {
@@ -247,16 +271,16 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
         newX = dragState.startLogical.x; // constrain vertical
       }
     }
-    
-    
+
+
     if (dragState.type === 'corner') {
       const currentCoords = project.geometry.coordinates || {
-          A: polygon.points[0],
-          B: polygon.points[1],
-          C: polygon.points[2],
-          D: polygon.points[3],
+        A: polygon.points[0],
+        B: polygon.points[1],
+        C: polygon.points[2],
+        D: polygon.points[3],
       };
-      
+
       const newCoords = {
         ...currentCoords,
         [dragState.id]: { x: newX, y: newY },
@@ -327,8 +351,8 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
 
       {/* ══════ TITLE ══════ */}
       <TitleSection
-        x={scaledBbox.minX + (scaledBbox.maxX - scaledBbox.minX) / 2}
-        y={28}
+        x={svgWidth / 2}
+        y={18}
         area={areaText}
         areaUnit={areaUnit}
         lang={lang}
@@ -361,11 +385,11 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
         if (!div.polygon) return null;
         const divCentroid = calculateCentroid(div.polygon);
         const divArea = div.area || 0;
-        const partName = lang === 'hi' ? (div.nameHi || div.name) : 
-                         lang === 'both' ? `${div.nameHi || div.name}` : div.name;
+        const partName = lang === 'hi' ? (div.nameHi || div.name) :
+          lang === 'both' ? `${div.nameHi || div.name}` : div.name;
         const colorLabel = i === 0 ? (lang === 'hi' ? '(हरा भाग)' : lang === 'both' ? '(हरा भाग)' : '(Green)') :
-                           (lang === 'hi' ? '(पीला भाग)' : lang === 'both' ? '(पीला भाग)' : '(Yellow)');
-        
+          (lang === 'hi' ? '(पीला भाग)' : lang === 'both' ? '(पीला भाग)' : '(Yellow)');
+
         return (
           <g key={div.id}>
             <text x={divCentroid.x} y={divCentroid.y - 30} textAnchor="middle"
@@ -398,8 +422,8 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
           <text x={centroid.x} y={centroid.y - 20} textAnchor="middle"
             fontSize="13" fontWeight="700" fill="#1a237e">
             {lang === 'hi' ? 'पूरी जमीन (कोई बंटवारा नहीं)' :
-             lang === 'both' ? 'पूरी जमीन (कोई बंटवारा नहीं)' :
-             'Entire Land (No Division)'}
+              lang === 'both' ? 'पूरी जमीन (कोई बंटवारा नहीं)' :
+                'Entire Land (No Division)'}
           </text>
           <text x={centroid.x} y={centroid.y + 10} textAnchor="middle"
             fontSize="24" fontWeight="800" fill="#1a237e">
@@ -413,61 +437,72 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
       )}
 
       {/* ══════ DIMENSION LINES ══════ */}
-      {project.display.showDimensions && (
-        <>
-          {/* Top edge (D→A): East boundary */}
-          <DimensionLineComponent
-            p1={D} p2={A}
-            value={formatLength(project.boundaries.east)}
-            valueM={toMeters(project.boundaries.east)}
-            unit={unitLabel(unit)}
-            direction={dirLabel(dirMap.top)}
-            offset={30}
-            side="top"
-            lang={lang}
-            sideDesc={lang === 'hi' || lang === 'both' ? 'ऊपर की सीधी साइड' : 'Upper Straight Side'}
-          />
-          
-          {/* Bottom edge (C→B or B→C): West boundary */}
-          <DimensionLineComponent
-            p1={C} p2={B}
-            value={formatLength(project.boundaries.west)}
-            valueM={toMeters(project.boundaries.west)}
-            unit={unitLabel(unit)}
-            direction={dirLabel(dirMap.bottom)}
-            offset={-30}
-            side="bottom"
-            lang={lang}
-            sideDesc={lang === 'hi' || lang === 'both' ? 'नीचे की तिरछी साइड' : 'Lower Sloped Side'}
-          />
+      {project.display.showDimensions && (() => {
+        // Helper: dimension offset = road band (if any) + spacing + label height
+        const dimOffset = (sideDir: import('@/types/land').CardinalDirection) => {
+          const s = project.surroundings[sideDir];
+          if (s?.type === 'road' || s?.type === 'open-road' || s?.type === 'lane') {
+            // road band in px + label area outside road + dimension clearance
+            return (s.width || 12) * scale + 52;
+          }
+          return 30;
+        };
+        return (
+          <>
+            {/* Top edge (D→A): East boundary */}
+            <DimensionLineComponent
+              p1={D} p2={A}
+              scaledPoints={scaledPoints}
+              value={Number(project.boundaries.east.toFixed(2))}
+              unit={unitLabel(unit)}
+              direction={dirLabel(dirMap.top)}
+              offset={dimOffset(dirMap.top)}
+              side="top"
+              lang={lang}
+              sideDesc={lang === 'hi' || lang === 'both' ? 'ऊपर की सीधी साइड' : 'Upper Straight Side'}
+            />
 
-          {/* Right edge (A→B): South boundary */}
-          <DimensionLineComponent
-            p1={A} p2={B}
-            value={formatLength(project.boundaries.south)}
-            valueM={toMeters(project.boundaries.south)}
-            unit={unitLabel(unit)}
-            direction={dirLabel(dirMap.right)}
-            offset={30}
-            side="right"
-            lang={lang}
-            sideDesc={lang === 'hi' || lang === 'both' ? 'दायां साइड' : 'Right Side'}
-          />
+            {/* Bottom edge (C→B): West boundary */}
+            <DimensionLineComponent
+              p1={C} p2={B}
+              scaledPoints={scaledPoints}
+              value={Number(project.boundaries.west.toFixed(2))}
+              unit={unitLabel(unit)}
+              direction={dirLabel(dirMap.bottom)}
+              offset={dimOffset(dirMap.bottom)}
+              side="bottom"
+              lang={lang}
+              sideDesc={lang === 'hi' || lang === 'both' ? 'नीचे की तिरछी साइड' : 'Lower Sloped Side'}
+            />
 
-          {/* Left edge (D→C): North boundary */}
-          <DimensionLineComponent
-            p1={D} p2={C}
-            value={formatLength(project.boundaries.north)}
-            valueM={toMeters(project.boundaries.north)}
-            unit={unitLabel(unit)}
-            direction={dirLabel(dirMap.left)}
-            offset={-30}
-            side="left"
-            lang={lang}
-            sideDesc={lang === 'hi' || lang === 'both' ? 'बायां साइड' : 'Left Side'}
-          />
-        </>
-      )}
+            {/* Right edge (A→B): South boundary */}
+            <DimensionLineComponent
+              p1={A} p2={B}
+              scaledPoints={scaledPoints}
+              value={Number(project.boundaries.south.toFixed(2))}
+              unit={unitLabel(unit)}
+              direction={dirLabel(dirMap.right)}
+              offset={dimOffset(dirMap.right)}
+              side="right"
+              lang={lang}
+              sideDesc={lang === 'hi' || lang === 'both' ? 'दायां साइड' : 'Right Side'}
+            />
+
+            {/* Left edge (D→C): North boundary */}
+            <DimensionLineComponent
+              p1={D} p2={C}
+              scaledPoints={scaledPoints}
+              value={Number(project.boundaries.north.toFixed(2))}
+              unit={unitLabel(unit)}
+              direction={dirLabel(dirMap.left)}
+              offset={dimOffset(dirMap.left)}
+              side="left"
+              lang={lang}
+              sideDesc={lang === 'hi' || lang === 'both' ? 'बायां साइड' : 'Left Side'}
+            />
+          </>
+        );
+      })()}
 
       {/* ══════ CORNER LABELS & HANDLES ══════ */}
       {project.display.showCornerLabels && (
@@ -486,20 +521,22 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
       {/* ══════ DIRECTION LABELS on polygon edges ══════ */}
       {project.display.showDirectionLabels && (
         <>
-          <DirectionLabel p1={D} p2={A} direction={dirMap.top} offset={-65} side="top" />
-          <DirectionLabel p1={C} p2={B} direction={dirMap.bottom} offset={70} side="bottom" />
-          <DirectionLabel p1={A} p2={B} direction={dirMap.right} offset={70} side="right" />
-          <DirectionLabel p1={D} p2={C} direction={dirMap.left} offset={-70} side="left" />
+          {/* Top: offset inward (inside polygon) to avoid road */}
+          <DirectionLabel p1={D} p2={A} direction={dirMap.top} offset={20} side="top" />
+          <DirectionLabel p1={C} p2={B} direction={dirMap.bottom} offset={60} side="bottom" />
+          <DirectionLabel p1={A} p2={B} direction={dirMap.right} offset={60} side="right" />
+          <DirectionLabel p1={D} p2={C} direction={dirMap.left} offset={-60} side="left" />
         </>
       )}
 
       {/* ══════ SURROUNDINGS LABELS ══════ */}
       {project.display.showSurroundings && (
-        <SurroundingsLabels
+        <SurroundingsRenderer
           points={scaledPoints}
           surroundings={project.surroundings}
           orientation={project.orientation}
           lang={lang}
+          scale={scale}
         />
       )}
 
@@ -521,7 +558,7 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
             scale
           );
         }
-        
+
         return (
           <ElementIcon
             key={elem.id}
@@ -537,22 +574,11 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
         );
       })}
 
-      {/* ══════ COMPASS ══════ */}
-      {project.display.showCompass !== 'off' && (
-        <Compass
-          x={PADDING - 50}
-          y={svgHeight - 110}
-          size={project.display.showCompass === 'detailed' ? 70 : 45}
-          orientation={project.orientation}
-          lang={lang}
-        />
-      )}
-
       {/* ══════ INFO PANELS ══════ */}
       {project.display.showInfoPanel && (
         <InfoPanels
           x={svgWidth - INFO_PANEL_WIDTH - 20}
-          y={PADDING}
+          y={100}
           project={project}
           polygon={polygon}
           divisionData={divisionData}
@@ -561,7 +587,22 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
         />
       )}
 
+
+      {/* ══════ COMPASS IMAGE ══════ */}
+
+      {/* Compass image — bottom-left corner */}
+      <image
+        href="/compass.png"
+        x={25}
+        y={svgHeight - 100}
+        width={55}
+        height={55}
+        preserveAspectRatio="xMidYMid meet"
+        pointerEvents="none"
+      />
+
       {/* ══════ DISCLAIMER ══════ */}
+
       {project.display.showDisclaimer && (
         <text x={svgWidth / 2} y={svgHeight - 10} textAnchor="middle"
           fontSize="8" fill="#94a3b8" fontStyle="italic">
@@ -571,14 +612,14 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
 
       {/* Geometry status indicator */}
       <g transform={`translate(${svgWidth - 160}, ${svgHeight - 30})`}>
-        <rect x="0" y="0" width="150" height="22" rx="11" 
+        <rect x="0" y="0" width="150" height="22" rx="11"
           fill={polygon.status === 'reliable' ? '#dcfce7' : polygon.status === 'approximate' ? '#fef3c7' : '#fecaca'} />
-        <circle cx="12" cy="11" r="4" 
+        <circle cx="12" cy="11" r="4"
           fill={polygon.status === 'reliable' ? '#16a34a' : polygon.status === 'approximate' ? '#ca8a04' : '#dc2626'} />
         <text x="22" y="15" fontSize="9" fontWeight="600"
           fill={polygon.status === 'reliable' ? '#16a34a' : polygon.status === 'approximate' ? '#ca8a04' : '#dc2626'}>
           {lang === 'hi' ? t(`geometry${polygon.status.charAt(0).toUpperCase() + polygon.status.slice(1)}` as keyof typeof import('@/i18n/translations').en, 'hi') :
-           `Geometry: ${polygon.status.charAt(0).toUpperCase() + polygon.status.slice(1)}`}
+            `Geometry: ${polygon.status.charAt(0).toUpperCase() + polygon.status.slice(1)}`}
         </text>
       </g>
     </svg>
@@ -587,99 +628,112 @@ const LandMap: React.FC<LandMapProps> = ({ project, width, height, onUpdate }) =
 
 // ─── Sub-components ──────────────────────────────────────────
 
-/** Title section at top of map */
+/** Title section at top of map — single rendering, no duplication */
 const TitleSection: React.FC<{
   x: number; y: number; area: string; areaUnit: string; lang: Language; hasDivisions: boolean;
 }> = ({ x, y, area, areaUnit, lang, hasDivisions }) => (
   <g>
-    {/* Title text */}
-    <text x={x} y={y} textAnchor="middle" fontSize="14" fontWeight="700" fill="#0f172a" letterSpacing="0.05em">
-      {lang === 'hi' || lang === 'both' ? 'जमीन का नक्शा (SITE PLAN)' : 'SITE PLAN'}
-    </text>
-    
-    {/* Area badge */}
-    <text x={x} y={y + 20} textAnchor="middle" fontSize="12" fontWeight="600" fill="#334155">
-      {lang === 'hi' || lang === 'both' ? 'कुल क्षेत्रफल' : 'TOTAL AREA'} : {area} {areaUnit}
-    </text>
-    
-    {/* Division status */}
-    {!hasDivisions && (
-      <text x={x} y={y + 36} textAnchor="middle" fontSize="10" fontWeight="400" fill="#64748b">
-        {lang === 'hi' || lang === 'both' ? '(कोई बंटवारा नहीं है)' : '(NO DIVISIONS)'}
+    {/* Hindi title */}
+    {(lang === 'hi' || lang === 'both') && (
+      <text x={x} y={y} textAnchor="middle" fontSize="16" fontWeight="800" fill="#0f172a" letterSpacing="0.04em">
+        जमीन का नक्शा
       </text>
     )}
+    {/* English title */}
+    <text
+      x={x}
+      y={y + (lang === 'hi' || lang === 'both' ? 18 : 0)}
+      textAnchor="middle" fontSize="13" fontWeight="700" fill="#334155" letterSpacing="0.08em"
+    >
+      SITE PLAN
+    </text>
+    {/* Area */}
+    <text
+      x={x}
+      y={y + (lang === 'hi' || lang === 'both' ? 34 : 18)}
+      textAnchor="middle" fontSize="11" fontWeight="600" fill="#475569"
+    >
+      {lang === 'hi' || lang === 'both' ? 'कुल क्षेत्रफल' : 'TOTAL AREA'}: {area} {areaUnit}
+    </text>
   </g>
 );
 
-/** Dimension line with arrows and measurement text */
+/** Dimension line — always placed OUTSIDE the polygon using centroid-based outward normal */
 const DimensionLineComponent: React.FC<{
-  p1: Point; p2: Point; value: number; valueM: string; unit: string;
+  p1: Point; p2: Point;
+  scaledPoints: [Point, Point, Point, Point];
+  value: number; unit: string;
   direction: string; offset: number; side: string; lang: Language; sideDesc: string;
-}> = ({ p1, p2, value, valueM, unit, direction, offset, side, lang, sideDesc }) => {
-  const dimLine = calculateDimensionLine(p1, p2, Math.abs(offset), offset < 0 ? 'left' : 'right');
-  const isVertical = side === 'left' || side === 'right';
+}> = ({ p1, p2, scaledPoints, value, unit, direction, offset, side, lang, sideDesc }) => {
+  const [A, B, C, D] = scaledPoints;
+
+  // Determine outward normal via centroid test (guarantees placement outside polygon)
+  const centroid = {
+    x: (A.x + B.x + C.x + D.x) / 4,
+    y: (A.y + B.y + C.y + D.y) / 4,
+  };
+  const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+  const toMid = { x: mid.x - centroid.x, y: mid.y - centroid.y };
+
+  // Import segmentNormal inline (re-implement to avoid circular dep in sub-component)
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const len = Math.hypot(dx, dy) || 1;
+  // left normal = (-dy/len, dx/len), right = (dy/len, -dx/len)
+  const nLeft = { x: -dy / len, y: dx / len };
+  const nRight = { x: dy / len, y: -dx / len };
+  const dotLeft = nLeft.x * toMid.x + nLeft.y * toMid.y;
+  // dotLeft > 0 → left normal points away from centroid → outward
+  const outwardNormal = dotLeft > 0 ? nLeft : nRight;
+
+  // Dimension line endpoints (offset outward from the polygon edge)
+  const start = { x: p1.x + outwardNormal.x * offset, y: p1.y + outwardNormal.y * offset };
+  const end = { x: p2.x + outwardNormal.x * offset, y: p2.y + outwardNormal.y * offset };
+  const textPos = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+
+  // Readable angle
+  let angleDeg = Math.atan2(dy, dx) * (180 / Math.PI);
+  if (angleDeg > 90 || angleDeg <= -90) angleDeg += 180;
+
+  // Round displayed value to 2 decimal places (drop trailing zeros)
+  const displayVal = Number(value.toFixed(2));
 
   return (
     <g>
-      {/* Extension lines from polygon to dimension line */}
-      <line x1={p1.x} y1={p1.y} x2={dimLine.start.x} y2={dimLine.start.y}
-        stroke="#94a3b8" strokeWidth="0.5" />
-      <line x1={p2.x} y1={p2.y} x2={dimLine.end.x} y2={dimLine.end.y}
-        stroke="#94a3b8" strokeWidth="0.5" />
+      {/* Extension lines from polygon edge to dimension line */}
+      <line x1={p1.x} y1={p1.y} x2={start.x} y2={start.y} stroke="#94a3b8" strokeWidth="0.5" />
+      <line x1={p2.x} y1={p2.y} x2={end.x} y2={end.y} stroke="#94a3b8" strokeWidth="0.5" />
 
-      {/* Dimension line with arrows */}
+      {/* Dimension line */}
       <line
-        x1={dimLine.start.x} y1={dimLine.start.y}
-        x2={dimLine.end.x} y2={dimLine.end.y}
+        x1={start.x} y1={start.y}
+        x2={end.x} y2={end.y}
         stroke="#334155" strokeWidth="1"
         markerStart="url(#tick)" markerEnd="url(#tick)"
       />
 
-      {/* Measurement text */}
-      {isVertical ? (
-        <g>
-          <rect x={dimLine.textPosition.x + (side === 'left' ? -25 : 5)} y={dimLine.textPosition.y - 35} width="20" height="70" fill="rgba(255, 255, 255, 0.85)" />
-          <text
-            x={dimLine.textPosition.x + (side === 'left' ? -15 : 15)}
-            y={dimLine.textPosition.y}
-            textAnchor="middle"
-            fontSize="11" fontWeight="600" fill="#0f172a"
-            transform={`rotate(${side === 'left' ? -90 : 90}, ${dimLine.textPosition.x + (side === 'left' ? -15 : 15)}, ${dimLine.textPosition.y})`}
-          >
-            {value} {unit}
-          </text>
-          <text
-            x={dimLine.textPosition.x + (side === 'left' ? -30 : 30)}
-            y={dimLine.textPosition.y}
-            textAnchor="middle"
-            fontSize="8" fontWeight="500" fill="#475569"
-            transform={`rotate(${side === 'left' ? -90 : 90}, ${dimLine.textPosition.x + (side === 'left' ? -30 : 30)}, ${dimLine.textPosition.y})`}
-          >
-            {sideDesc}
-          </text>
-        </g>
-      ) : (
-        <g>
-          <rect x={dimLine.textPosition.x - 40} y={dimLine.textPosition.y + (side === 'top' ? -20 : 12)} width="80" height="12" fill="rgba(255, 255, 255, 0.85)" />
-          <text
-            x={dimLine.textPosition.x}
-            y={dimLine.textPosition.y + (side === 'top' ? -12 : 20)}
-            textAnchor="middle"
-            fontSize="11" fontWeight="600" fill="#0f172a"
-          >
-            {value} {unit}
-          </text>
-        </g>
-      )}
+      {/* Labels (rotated to match edge angle) */}
+      <g transform={`translate(${textPos.x}, ${textPos.y}) rotate(${angleDeg})`}>
+        <rect x="-42" y="-28" width="84" height="38" fill="rgba(255,255,255,0.9)" rx="4" />
+        <text y="-16" textAnchor="middle" fontSize="10" fontWeight="700" fill="#0f172a">
+          {displayVal} {unit}
+        </text>
+        <text y="-4" textAnchor="middle" fontSize="8" fontWeight="500" fill="#475569">
+          {sideDesc}
+        </text>
+        <text y="8" textAnchor="middle" fontSize="8" fontWeight="600" fill="#1e293b">
+          {direction}
+        </text>
+      </g>
     </g>
   );
 };
 
 /** Corner label (A, B, C, D) with drag handle */
 const CornerLabel: React.FC<{
-  point: Point; label: string; position: string; id: 'A'|'B'|'C'|'D';
+  point: Point; label: string; position: string; id: 'A' | 'B' | 'C' | 'D';
   isInteractive?: boolean; isDragging?: boolean;
-  onPointerDown?: (e: React.PointerEvent<SVGCircleElement>, id: 'A'|'B'|'C'|'D') => void;
+  onPointerDown?: (e: React.PointerEvent<SVGCircleElement>, id: 'A' | 'B' | 'C' | 'D') => void;
 }> = ({ point, label, position, id, isInteractive, isDragging, onPointerDown }) => {
   let dx = 0, dy = 0;
   switch (position) {
@@ -692,8 +746,8 @@ const CornerLabel: React.FC<{
   return (
     <g>
       {isInteractive && (
-        <circle 
-          cx={point.x} cy={point.y} r="16" 
+        <circle
+          cx={point.x} cy={point.y} r="16"
           fill={isDragging ? 'rgba(15, 23, 42, 0.1)' : 'transparent'}
           stroke={isDragging ? '#0f172a' : 'transparent'}
           strokeWidth="1"
@@ -743,53 +797,7 @@ const DirectionLabel: React.FC<{
   );
 };
 
-/** Surroundings labels outside polygon */
-const SurroundingsLabels: React.FC<{
-  points: [Point, Point, Point, Point];
-  surroundings: LandProject['surroundings'];
-  orientation: LandProject['orientation'];
-  lang: Language;
-}> = ({ points, surroundings, orientation, lang }) => {
-  const [A, B, C, D] = points;
 
-  const sides: Array<{
-    p1: Point; p2: Point; dir: CardinalDirection; offsetDir: string;
-  }> = [
-    { p1: D, p2: A, dir: orientation.top, offsetDir: 'top' },
-    { p1: A, p2: B, dir: orientation.right, offsetDir: 'right' },
-    { p1: B, p2: C, dir: orientation.bottom, offsetDir: 'bottom' },
-    { p1: C, p2: D, dir: orientation.left, offsetDir: 'left' },
-  ];
-
-  return (
-    <g>
-      {sides.map(({ p1, p2, dir, offsetDir }) => {
-        const info = surroundings[dir];
-        if (!info || info.type === 'empty') return null;
-
-        const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
-        const isVert = offsetDir === 'left' || offsetDir === 'right';
-        const label = lang === 'hi' ? (info.labelHi || info.label) :
-                     lang === 'both' ? (info.labelHi || info.label) : info.label;
-
-        if (!label) return null;
-
-        let x = mid.x, y = mid.y;
-        if (offsetDir === 'top') y -= 85;
-        else if (offsetDir === 'bottom') y += 90;
-        else if (offsetDir === 'left') x -= 95;
-        else if (offsetDir === 'right') x += 95;
-
-        return (
-          <text key={dir} x={x} y={y} textAnchor="middle" fontSize="9" fontWeight="500" fill="#546e7a"
-            transform={isVert ? `rotate(${offsetDir === 'left' ? -90 : 90}, ${x}, ${y})` : undefined}>
-            {label}
-          </text>
-        );
-      })}
-    </g>
-  );
-};
 
 /** Element icon renderer (temple, etc.) */
 const ElementIcon: React.FC<{
@@ -801,57 +809,26 @@ const ElementIcon: React.FC<{
 
   // Temple icon (simplified SVG)
   const renderIcon = () => {
-    switch (element.type) {
-      case 'temple':
-        return (
-          <g transform={`translate(${x - size / 2}, ${y - size / 2})`}>
-            {/* Temple base */}
-            <rect x={size * 0.15} y={size * 0.6} width={size * 0.7} height={size * 0.35} fill="#d4a574" stroke="#8b6914" strokeWidth="1" rx="2" />
-            {/* Temple body */}
-            <rect x={size * 0.25} y={size * 0.35} width={size * 0.5} height={size * 0.3} fill="#e8c8a0" stroke="#8b6914" strokeWidth="1" />
-            {/* Temple dome */}
-            <path d={`M ${size * 0.5} ${size * 0.05} Q ${size * 0.25} ${size * 0.15} ${size * 0.25} ${size * 0.35} L ${size * 0.75} ${size * 0.35} Q ${size * 0.75} ${size * 0.15} ${size * 0.5} ${size * 0.05}`}
-              fill="#c0392b" stroke="#922b21" strokeWidth="1" />
-            {/* Flag */}
-            <line x1={size * 0.5} y1={0} x2={size * 0.5} y2={size * 0.08} stroke="#8b6914" strokeWidth="1.5" />
-            <polygon points={`${size * 0.5},0 ${size * 0.65},${size * 0.04} ${size * 0.5},${size * 0.08}`} fill="#ff6f00" />
-          </g>
-        );
-      case 'tree':
-        return (
-          <g transform={`translate(${x - 8}, ${y - 16})`}>
-            <circle cx="8" cy="6" r="8" fill="#4caf50" stroke="#2e7d32" strokeWidth="1" />
-            <rect x="6" y="12" width="4" height="8" fill="#795548" />
-          </g>
-        );
-      case 'house':
-        return (
-          <g transform={`translate(${x - 12}, ${y - 12})`}>
-            <rect x="2" y="10" width="20" height="14" fill="#fff9c4" stroke="#f57f17" strokeWidth="1" />
-            <polygon points="12,0 0,10 24,10" fill="#e65100" stroke="#bf360c" strokeWidth="1" />
-            <rect x="9" y="14" width="6" height="10" fill="#4e342e" />
-          </g>
-        );
-      case 'gate':
-        return (
-          <g transform={`translate(${x - 10}, ${y - 6})`}>
-            <rect x="0" y="0" width="20" height="12" fill="none" stroke="#795548" strokeWidth="2" />
-            <line x1="10" y1="0" x2="10" y2="12" stroke="#795548" strokeWidth="1.5" />
-            <rect x="0" y="0" width="3" height="12" fill="#795548" />
-            <rect x="17" y="0" width="3" height="12" fill="#795548" />
-          </g>
-        );
-      default:
-        return (
-          <circle cx={x} cy={y} r="8" fill="#90a4ae" stroke="#546e7a" strokeWidth="1.5" />
-        );
-    }
+    return (
+      <image
+        href={`/assets/elements/${element.type}.png`}
+        x={x - size / 2}
+        y={y - size / 2}
+        width={size}
+        height={size}
+        preserveAspectRatio="xMidYMid meet"
+        style={{ mixBlendMode: 'multiply' }}
+        onError={(e: any) => {
+          e.target.style.display = 'none';
+        }}
+      />
+    );
   };
 
   const nameText = element.displayMode !== 'icon-only'
     ? (lang === 'hi' ? (element.nameHi || element.name) :
-       lang === 'both' ? `${element.name}\n${element.nameHi || ''}` :
-       element.name)
+      lang === 'both' ? `${element.name}\n${element.nameHi || ''}` :
+        element.name)
     : null;
 
   const dirText = element.displayMode === 'icon-name-direction'
@@ -859,31 +836,33 @@ const ElementIcon: React.FC<{
     : null;
 
   return (
-    <g 
+    <g
       style={{ cursor: isInteractive ? 'move' : 'default', touchAction: 'none' }}
       onPointerDown={isInteractive ? onPointerDown : undefined}
     >
       {isInteractive && (
-        <rect 
-          x={x - size / 2 - 10} y={y - size / 2 - 10} 
-          width={size + 20} height={size + 20} 
+        <rect
+          x={x - size / 2 - 10} y={y - size / 2 - 10}
+          width={size + 20} height={size + 20}
           fill={isDragging ? 'rgba(26, 35, 126, 0.1)' : 'transparent'}
           stroke={isDragging ? '#1a237e' : 'transparent'}
           strokeWidth="1" strokeDasharray="4 4" rx="4"
         />
       )}
       {renderIcon()}
-      {nameText && (
-        <>
-          <text x={x} y={y + size / 2 + 14} textAnchor="middle" fontSize="10" fontWeight="700" fill="#1a237e">
-            {element.name}
-          </text>
-          {element.nameHi && (lang === 'hi' || lang === 'both') && (
-            <text x={x} y={y + size / 2 + 26} textAnchor="middle" fontSize="10" fontWeight="600" fill="#37474f">
-              {element.nameHi}
-            </text>
-          )}
-        </>
+      {element.displayMode !== 'icon-only' && (
+        <text x={x} y={y + size / 2 + 14} textAnchor="middle" fontSize="10" fontWeight="700" fill="#1a237e">
+          {(() => {
+            if (lang === 'en') return element.name;
+            if (lang === 'hi') return element.nameHi || element.name;
+
+            // Bilingual mode
+            if (element.nameHi && element.nameHi.trim() && element.nameHi !== element.name) {
+              return `${element.name} / ${element.nameHi}`;
+            }
+            return element.name;
+          })()}
+        </text>
       )}
       {dirText && (
         <text x={x} y={y + size / 2 + 38} textAnchor="middle" fontSize="8" fill="#78909c">
@@ -900,7 +879,7 @@ const Compass: React.FC<{
 }> = ({ x, y, size, orientation, lang }) => {
   // Map cardinal directions to visual positions based on orientation
   const dirToAngle: Record<CardinalDirection, number> = { north: -90, east: 0, south: 90, west: 180 };
-  
+
   // In our orientation system, 'top' direction should point up (-90°)
   const topAngle = dirToAngle[orientation.top] ?? 0;
   const rightAngle = dirToAngle[orientation.right] ?? 90;
@@ -1111,3 +1090,4 @@ const InfoPanels: React.FC<{
 };
 
 export default React.memo(LandMap);
+

@@ -117,7 +117,7 @@ export interface DivisionConfig {
   enabled: boolean;
   count: number;
   method: DivisionMethod;
-  orientation: 'vertical' | 'horizontal';
+  orientation: 'vertical' | 'horizontal' | 'diagonal' | 'custom';
   divisions: Division[];
 }
 
@@ -128,7 +128,7 @@ export type ElementType =
   | 'house'
   | 'gate'
   | 'road'
-  | 'garden'
+  | 'park'
   | 'tree'
   | 'well'
   | 'parking'
@@ -136,7 +136,12 @@ export type ElementType =
   | 'water-tank'
   | 'boundary-wall'
   | 'open-area'
-  | 'custom';
+  | 'custom'
+  | 'trees'
+  | 'canal'
+  | 'water'
+  | 'garden'
+  | 'electric-pole';
 
 export type PositionPreset =
   | 'north-east'
@@ -176,6 +181,8 @@ export type SurroundingType =
   | 'open-road'
   | 'lane'
   | 'neighbor'
+  | 'park'
+  | 'water'
   | 'empty'
   | 'other';
 
@@ -183,6 +190,9 @@ export interface SurroundingInfo {
   type: SurroundingType;
   label: string;
   labelHi?: string;
+  width?: number;
+  offset?: number;
+  surveyNumber?: string;
 }
 
 export interface Surroundings {

@@ -89,6 +89,42 @@ export function clipPolygonByHorizontalLine(
 }
 
 /**
+ * Clip a polygon by a diagonal line x + y = cutVal
+ */
+export function clipPolygonByDiagonalLine(
+  polygon: Point[],
+  cutVal: number
+): { top: Point[]; bottom: Point[] } {
+  const top: Point[] = [];
+  const bottom: Point[] = [];
+  const n = polygon.length;
+
+  for (let i = 0; i < n; i++) {
+    const curr = polygon[i]!;
+    const next = polygon[(i + 1) % n]!;
+
+    const currVal = curr.x + curr.y;
+    const nextVal = next.x + next.y;
+    const currTop = currVal <= cutVal;
+    const nextTop = nextVal <= cutVal;
+
+    if (currTop) top.push(curr);
+    else bottom.push(curr);
+
+    if (currTop !== nextTop) {
+      const t = (cutVal - currVal) / (nextVal - currVal);
+      const intersection: Point = {
+        x: curr.x + t * (next.x - curr.x),
+        y: curr.y + t * (next.y - curr.y),
+      };
+      top.push(intersection);
+      bottom.push(intersection);
+    }
+  }
+  return { top, bottom };
+}
+
+/**
  * Calculate equal-area divisions using binary search.
  * 
  * For a vertical division into N equal parts:
@@ -104,17 +140,17 @@ export function clipPolygonByHorizontalLine(
 export function calculateEqualAreaDivisions(
   polygon: Point[],
   count: number,
-  orientation: 'vertical' | 'horizontal' = 'vertical'
+  orientation: 'vertical' | 'horizontal' | 'diagonal' | 'custom' = 'vertical'
 ): Point[][] {
   if (count <= 1) return [polygon];
 
   const totalArea = calculatePolygonArea(polygon);
   const targetArea = totalArea / count;
 
-  // Find bounding box
+  // Find bounding box based on orientation
   let minVal = Infinity, maxVal = -Infinity;
   for (const p of polygon) {
-    const val = orientation === 'vertical' ? p.x : p.y;
+    const val = orientation === 'vertical' ? p.x : orientation === 'horizontal' ? p.y : (p.x + p.y);
     if (val < minVal) minVal = val;
     if (val > maxVal) maxVal = val;
   }
@@ -132,7 +168,7 @@ export function calculateEqualAreaDivisions(
     // Update min/max for remaining polygon
     let rMin = Infinity, rMax = -Infinity;
     for (const p of remainingPolygon) {
-      const val = orientation === 'vertical' ? p.x : p.y;
+      const val = orientation === 'vertical' ? p.x : orientation === 'horizontal' ? p.y : (p.x + p.y);
       if (val < rMin) rMin = val;
       if (val > rMax) rMax = val;
     }
@@ -145,8 +181,10 @@ export function calculateEqualAreaDivisions(
       let part1: Point[];
       if (orientation === 'vertical') {
         part1 = clipPolygonByVerticalLine(remainingPolygon, mid).left;
-      } else {
+      } else if (orientation === 'horizontal') {
         part1 = clipPolygonByHorizontalLine(remainingPolygon, mid).top;
+      } else {
+        part1 = clipPolygonByDiagonalLine(remainingPolygon, mid).top;
       }
       
       const part1Area = calculatePolygonArea(part1);
@@ -168,8 +206,12 @@ export function calculateEqualAreaDivisions(
       const { left, right } = clipPolygonByVerticalLine(remainingPolygon, bestCut);
       results.push(left);
       remainingPolygon = right;
-    } else {
+    } else if (orientation === 'horizontal') {
       const { top, bottom } = clipPolygonByHorizontalLine(remainingPolygon, bestCut);
+      results.push(top);
+      remainingPolygon = bottom;
+    } else {
+      const { top, bottom } = clipPolygonByDiagonalLine(remainingPolygon, bestCut);
       results.push(top);
       remainingPolygon = bottom;
     }
@@ -187,13 +229,13 @@ export function calculateEqualAreaDivisions(
 export function calculateEqualWidthDivisions(
   polygon: Point[],
   count: number,
-  orientation: 'vertical' | 'horizontal' = 'vertical'
+  orientation: 'vertical' | 'horizontal' | 'diagonal' | 'custom' = 'vertical'
 ): Point[][] {
   if (count <= 1) return [polygon];
 
   let minVal = Infinity, maxVal = -Infinity;
   for (const p of polygon) {
-    const val = orientation === 'vertical' ? p.x : p.y;
+    const val = orientation === 'vertical' ? p.x : orientation === 'horizontal' ? p.y : (p.x + p.y);
     if (val < minVal) minVal = val;
     if (val > maxVal) maxVal = val;
   }
@@ -209,8 +251,12 @@ export function calculateEqualWidthDivisions(
       const { left, right } = clipPolygonByVerticalLine(remaining, cutVal);
       results.push(left);
       remaining = right;
-    } else {
+    } else if (orientation === 'horizontal') {
       const { top, bottom } = clipPolygonByHorizontalLine(remaining, cutVal);
+      results.push(top);
+      remaining = bottom;
+    } else {
+      const { top, bottom } = clipPolygonByDiagonalLine(remaining, cutVal);
       results.push(top);
       remaining = bottom;
     }

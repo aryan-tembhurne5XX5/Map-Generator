@@ -15,6 +15,7 @@ import type {
 import { t } from '@/i18n/translations';
 import { formatNumber, areaUnitLabel, areaUnitLabelHi } from '@/geometry/units';
 import { v4 as uuidv4 } from 'uuid';
+import ElementLibraryModal from './ElementLibraryModal';
 
 interface SidebarProps {
   project: LandProject;
@@ -53,7 +54,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onSave, onLoad,
 }) => {
   const lang = project.language;
-  
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+
   // ── Helpers ──
   const updateBoundary = (dir: CardinalDirection, value: number) => {
     onUpdate({ boundaries: { ...project.boundaries, [dir]: value } });
@@ -72,17 +74,17 @@ const Sidebar: React.FC<SidebarProps> = ({
     });
   };
 
-  const addElement = () => {
+  const addElement = (type: ElementType, name: string, nameHi: string) => {
     const newElem = {
       id: uuidv4(),
-      type: 'temple' as ElementType,
-      name: 'Temple',
-      nameHi: 'मंदिर',
-      position: 'north-east' as PositionPreset,
-      offsetX: 5,
-      offsetY: 4,
-      width: 6,
-      height: 6,
+      type,
+      name,
+      nameHi,
+      position: 'center' as PositionPreset,
+      offsetX: 0,
+      offsetY: 0,
+      width: 10,
+      height: 10,
       rotation: 0,
       displayMode: 'icon-name' as ElementDisplayMode,
     };
@@ -112,12 +114,16 @@ const Sidebar: React.FC<SidebarProps> = ({
     { value: 'house', label: 'House', labelHi: 'मकान' },
     { value: 'gate', label: 'Gate', labelHi: 'गेट' },
     { value: 'tree', label: 'Tree', labelHi: 'पेड़' },
+    { value: 'trees', label: 'Trees', labelHi: 'पेड़ों का समूह' },
     { value: 'garden', label: 'Garden', labelHi: 'बगीचा' },
+    { value: 'park', label: 'Park', labelHi: 'पार्क' },
     { value: 'well', label: 'Well', labelHi: 'कुआँ' },
     { value: 'parking', label: 'Parking', labelHi: 'पार्किंग' },
     { value: 'shop', label: 'Shop', labelHi: 'दुकान' },
     { value: 'water-tank', label: 'Water Tank', labelHi: 'पानी की टंकी' },
     { value: 'open-area', label: 'Open Area', labelHi: 'खुला क्षेत्र' },
+    { value: 'canal', label: 'Canal', labelHi: 'नहर' },
+    { value: 'electric-pole', label: 'Electric Pole', labelHi: 'बिजली का खंभा' },
   ];
   const positionOptions: Array<{ value: PositionPreset; label: string }> = [
     { value: 'north-east', label: 'North-East' },
@@ -214,9 +220,9 @@ const Sidebar: React.FC<SidebarProps> = ({
           <div className="form-group" key={side}>
             <label className="form-label">
               {side === 'top' ? (lang === 'hi' || lang === 'both' ? 'ऊपर' : 'Top') :
-               side === 'right' ? (lang === 'hi' || lang === 'both' ? 'दायां' : 'Right') :
-               side === 'bottom' ? (lang === 'hi' || lang === 'both' ? 'नीचे' : 'Bottom') :
-               (lang === 'hi' || lang === 'both' ? 'बायां' : 'Left')}
+                side === 'right' ? (lang === 'hi' || lang === 'both' ? 'दायां' : 'Right') :
+                  side === 'bottom' ? (lang === 'hi' || lang === 'both' ? 'नीचे' : 'Bottom') :
+                    (lang === 'hi' || lang === 'both' ? 'बायां' : 'Left')}
             </label>
             <select className="form-select" value={project.orientation[side]}
               onChange={e => updateOrientation(side, e.target.value as CardinalDirection)}>
@@ -241,7 +247,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             </span>
           </label>
         </div>
-        
+
         {project.divisions.enabled && (
           <>
             <div className="form-row">
@@ -256,9 +262,9 @@ const Sidebar: React.FC<SidebarProps> = ({
                       nameHi: `हिस्सा ${i + 1}`,
                       percentage: 100 / count,
                       color: i === 0 ? 'rgba(76, 175, 80, 0.3)' :
-                             i === 1 ? 'rgba(255, 235, 59, 0.3)' :
-                             i === 2 ? 'rgba(33, 150, 243, 0.2)' :
-                             'rgba(255, 152, 0, 0.2)',
+                        i === 1 ? 'rgba(255, 235, 59, 0.3)' :
+                          i === 2 ? 'rgba(33, 150, 243, 0.2)' :
+                            'rgba(255, 152, 0, 0.2)',
                     }));
                     onUpdate({ divisions: { ...project.divisions, count, divisions: divs } });
                   }}>
@@ -279,10 +285,12 @@ const Sidebar: React.FC<SidebarProps> = ({
                 <label className="form-label">{lang === 'hi' || lang === 'both' ? 'दिशा' : 'Direction'}</label>
                 <select className="form-select" value={project.divisions.orientation || 'vertical'}
                   onChange={e => onUpdate({
-                    divisions: { ...project.divisions, orientation: e.target.value as 'vertical' | 'horizontal' }
+                    divisions: { ...project.divisions, orientation: e.target.value as any }
                   })}>
                   <option value="vertical">{lang === 'hi' || lang === 'both' ? 'खड़ी (Vertical)' : 'Vertical'}</option>
                   <option value="horizontal">{lang === 'hi' || lang === 'both' ? 'आड़ी (Horizontal)' : 'Horizontal'}</option>
+                  <option value="diagonal">{lang === 'hi' || lang === 'both' ? 'तिरछी (Diagonal)' : 'Diagonal'}</option>
+                  <option value="custom">{lang === 'hi' || lang === 'both' ? 'कस्टम (Custom)' : 'Custom'}</option>
                 </select>
               </div>
             </div>
@@ -344,28 +352,63 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
         ))}
-        <button className="btn btn-secondary btn-sm" style={{ width: '100%' }} onClick={addElement}>
+        <button className="btn btn-secondary btn-sm" style={{ width: '100%' }} onClick={() => setIsLibraryOpen(true)}>
           <Plus size={14} /> {lang === 'hi' || lang === 'both' ? 'तत्व जोड़ें' : 'Add Element'}
         </button>
       </Section>
 
+      <ElementLibraryModal
+        isOpen={isLibraryOpen}
+        onClose={() => setIsLibraryOpen(false)}
+        onAddElement={addElement}
+        elementTypes={elementTypes}
+      />
+
       {/* ══════ SURROUNDINGS ══════ */}
       <Section title={lang === 'hi' || lang === 'both' ? 'आस-पास' : 'Surroundings'} icon={<Navigation size={14} />}>
         {(Object.keys(project.surroundings) as CardinalDirection[]).map(dir => (
-          <div className="form-group" key={dir}>
+          <div className="form-group" key={dir} style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: 8, marginBottom: 8 }}>
             <label className="form-label">
-              {dir.charAt(0).toUpperCase() + dir.slice(1)} 
+              {dir.charAt(0).toUpperCase() + dir.slice(1)}
               {lang === 'hi' || lang === 'both' ? ` (${dir === 'north' ? 'उत्तर' : dir === 'south' ? 'दक्षिण' : dir === 'east' ? 'पूर्व' : 'पश्चिम'})` : ''}
             </label>
-            <input type="text" className="form-input" 
-              value={project.surroundings[dir].label}
-              placeholder="e.g., Open Road / Neighbor"
-              onChange={e => updateSurrounding(dir, 'label', e.target.value)} />
-            {(lang === 'hi' || lang === 'both') && (
-              <input type="text" className="form-input" style={{ marginTop: 4 }}
-                value={project.surroundings[dir].labelHi || ''}
-                placeholder="हिंदी में..."
-                onChange={e => updateSurrounding(dir, 'labelHi', e.target.value)} />
+            <select className="form-select" value={project.surroundings[dir].type || 'other'}
+              style={{ marginBottom: 4 }}
+              onChange={e => updateSurrounding(dir, 'type', e.target.value)}>
+              <option value="road">Road / सड़क</option>
+              <option value="neighbor">Neighbor / पड़ोसी</option>
+              <option value="park">Park / पार्क</option>
+              <option value="water">Canal / नहर</option>
+              <option value="other">Other / अन्य</option>
+              <option value="empty">Empty / खाली</option>
+            </select>
+            {project.surroundings[dir].type !== 'empty' && (
+              <>
+                <input type="text" className="form-input"
+                  value={project.surroundings[dir].label}
+                  placeholder="English Label..."
+                  onChange={e => updateSurrounding(dir, 'label', e.target.value)} />
+                {(lang === 'hi' || lang === 'both') && (
+                  <input type="text" className="form-input" style={{ marginTop: 4 }}
+                    value={project.surroundings[dir].labelHi || ''}
+                    placeholder="हिंदी में..."
+                    onChange={e => updateSurrounding(dir, 'labelHi', e.target.value)} />
+                )}
+                {project.surroundings[dir].type === 'road' && (
+                  <div className="form-row" style={{ marginTop: 4 }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.65rem' }}>Width ({project.unit})</label>
+                      <input type="number" className="form-input" value={project.surroundings[dir].width ?? 12}
+                        onChange={e => updateSurrounding(dir, 'width', e.target.value)} />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.65rem' }}>Offset ({project.unit})</label>
+                      <input type="number" className="form-input" value={project.surroundings[dir].offset ?? 0}
+                        onChange={e => updateSurrounding(dir, 'offset', e.target.value)} />
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         ))}
